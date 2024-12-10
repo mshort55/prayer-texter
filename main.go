@@ -24,7 +24,7 @@ type TextMessage struct {
 	Phone string `json:"phone-number"`
 }
 
-func signUp(txt TextMessage, mem Member) {
+func signUp(db database, txt TextMessage, mem Member) {
 	const (
 		nameRequest             = "Text your name, or 2 to stay anonymous"
 		memberTypeRequest       = "Text 1 for prayer request, or 2 to be added to the intercessors list (to pray for others)"
@@ -38,44 +38,44 @@ func signUp(txt TextMessage, mem Member) {
 		// stage 1
 		mem.SetupStatus = "in-progress"
 		mem.SetupStage = 1
-		mem.put(memberTable)
+		mem.put(db, memberTable)
 		mem.sendMessage(nameRequest)
 	} else if txt.Body != "2" && mem.SetupStage == 1 {
 		// stage 2 name request
 		mem.SetupStage = 2
 		mem.Name = txt.Body
-		mem.put(memberTable)
+		mem.put(db, memberTable)
 		mem.sendMessage(memberTypeRequest)
 	} else if txt.Body == "2" && mem.SetupStage == 1 {
 		// stage 2 name request
 		mem.SetupStage = 2
 		mem.Name = "Anonymous"
-		mem.put(memberTable)
+		mem.put(db, memberTable)
 		mem.sendMessage(memberTypeRequest)
 	} else if txt.Body == "1" && mem.SetupStage == 2 {
 		// final message for member sign up
 		mem.SetupStatus = "completed"
 		mem.SetupStage = 99
 		mem.Intercessor = false
-		mem.put(memberTable)
+		mem.put(db, memberTable)
 		mem.sendMessage(prayerInstructions)
 	} else if txt.Body == "2" && mem.SetupStage == 2 {
 		// stage 3 intercessor sign up
 		mem.SetupStage = 3
 		mem.Intercessor = true
-		mem.put(memberTable)
+		mem.put(db, memberTable)
 		mem.sendMessage(prayerNumRequest)
 	} else if mem.SetupStage == 3 {
 		// final message for intercessor sign up
 		if num, err := strconv.Atoi(txt.Body); err == nil {
-			phones := IntercessorPhones{}.get()
+			phones := IntercessorPhones{}.get(db)
 			phones = phones.addPhone(mem.Phone)
-			phones.put()
+			phones.put(db)
 
 			mem.SetupStatus = "completed"
 			mem.SetupStage = 99
 			mem.WeeklyPrayerLimit = num
-			mem.put(memberTable)
+			mem.put(db, memberTable)
 			mem.sendMessage(intercessorInstructions)
 		} else {
 			mem.sendMessage(wrongInput)
@@ -86,25 +86,25 @@ func signUp(txt TextMessage, mem Member) {
 	}
 }
 
-func findIntercessors() []Member {
+func findIntercessors(db database) []Member {
 	var intercessors []Member
 
 	for len(intercessors) < numIntercessorsPerPrayer {
-		allPhones := IntercessorPhones{}.get()
+		allPhones := IntercessorPhones{}.get(db)
 		randPhones := allPhones.genRandPhones()
 
 		for _, phn := range randPhones {
-			intr := Member{Phone: phn}.get(memberTable)
+			intr := Member{Phone: phn}.get(db, memberTable)
 
 			if intr.PrayerCount < intr.WeeklyPrayerLimit {
 				intercessors = append(intercessors, intr)
 				intr.PrayerCount += 1
 				allPhones = allPhones.delPhone(intr.Phone)
-				intr.put(memberTable)
+				intr.put(db, memberTable)
 
 				if intr.WeeklyPrayerDate == "" {
 					intr.WeeklyPrayerDate = time.Now().Format(time.RFC3339)
-					intr.put(memberTable)
+					intr.put(db, memberTable)
 				}
 			} else if intr.PrayerCount >= intr.WeeklyPrayerLimit {
 				currentTime := time.Now()
@@ -121,7 +121,7 @@ func findIntercessors() []Member {
 					intr.PrayerCount = 1
 					allPhones = allPhones.delPhone(intr.Phone)
 					intr.WeeklyPrayerDate = time.Now().Format(time.RFC3339)
-					intr.put(memberTable)
+					intr.put(db, memberTable)
 				} else if (diff / 24) < 7 {
 					allPhones = allPhones.delPhone(intr.Phone)
 				}
@@ -132,13 +132,13 @@ func findIntercessors() []Member {
 	return intercessors
 }
 
-func prayerRequest(txt TextMessage, mem Member) {
+func prayerRequest(db database, txt TextMessage, mem Member) {
 	const (
 		prayerIntro        = "Hello! Please pray for this person:\n"
 		prayerConfirmation = "Your prayer request has been sent out!"
 	)
 
-	intercessors := findIntercessors()
+	intercessors := findIntercessors(db)
 
 	for _, intr := range intercessors {
 		pryr := Prayer{
@@ -147,8 +147,8 @@ func prayerRequest(txt TextMessage, mem Member) {
 			Request:          txt.Body,
 			Requestor:        mem,
 		}
-		pryr.put()
-		intr.sendMessage(prayerIntro+pryr.Request)
+		pryr.put(db)
+		intr.sendMessage(prayerIntro + pryr.Request)
 	}
 
 	mem.sendMessage(prayerConfirmation)
@@ -159,20 +159,23 @@ func mainFlow(txt TextMessage) {
 		removeUser = "You have been removed from prayer texter. If you ever want to sign back up, text the word pray to this number."
 	)
 
-	mem := Member{Phone: txt.Phone}.get(memberTable)
+	db := database{}
+	db.clnt = getDdbClient()
+
+	mem := Member{Phone: txt.Phone}.get(db, memberTable)
 
 	if strings.ToLower(txt.Body) == "pray" || mem.SetupStatus == "in-progress" {
-		signUp(txt, mem)
+		signUp(db, txt, mem)
 	} else if strings.ToLower(txt.Body) == "cancel" || strings.ToLower(txt.Body) == "stop" {
-		mem.delete()
+		mem.delete(db)
 		if mem.Intercessor {
-			phones := IntercessorPhones{}.get()
+			phones := IntercessorPhones{}.get(db)
 			phones = phones.delPhone(mem.Phone)
-			phones.put()
+			phones.put(db)
 		}
 		mem.sendMessage(removeUser)
 	} else if mem.SetupStatus == "completed" {
-		prayerRequest(txt, mem)
+		prayerRequest(db, txt, mem)
 	} else if mem.SetupStatus == "" {
 		log.Printf("%v is not a registered user, dropping message", mem.Phone)
 	}

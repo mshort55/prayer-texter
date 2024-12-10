@@ -19,8 +19,8 @@ const (
 	numIntercessorsPerPrayer   = 2
 )
 
-func (i IntercessorPhones) get() IntercessorPhones {
-	resp := getItem(IntercessorPhonesAttribute, IntercessorPhonesKey, IntercessorPhonesTable)
+func (i IntercessorPhones) get(d dbGetter) IntercessorPhones {
+	resp := d.getItem(IntercessorPhonesAttribute, IntercessorPhonesKey, IntercessorPhonesTable)
 
 	if err := attributevalue.UnmarshalMap(resp.Item, &i); err != nil {
 		log.Fatalf("unmarshal failed for get intercessor phones, %v", err)
@@ -29,7 +29,7 @@ func (i IntercessorPhones) get() IntercessorPhones {
 	return i
 }
 
-func (i IntercessorPhones) put() {
+func (i IntercessorPhones) put(d dbPutter) {
 	i.Name = IntercessorPhonesKey
 
 	data, err := attributevalue.MarshalMap(i)
@@ -37,7 +37,7 @@ func (i IntercessorPhones) put() {
 		log.Fatalf("marshal failed for put intercessor phones, %v", err)
 	}
 
-	putItem(IntercessorPhonesTable, data)
+	d.putItem(IntercessorPhonesTable, data)
 }
 
 func (i IntercessorPhones) addPhone(phone string) IntercessorPhones {

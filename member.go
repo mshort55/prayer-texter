@@ -31,8 +31,8 @@ func (m Member) sendMessage(body string) {
 	sendText(body, m.Phone)
 }
 
-func (m Member) get(table string) Member {
-	resp := getItem(memberAttribute, m.Phone, table)
+func (m Member) get(d dbGetter, table string) Member {
+	resp := d.getItem(memberAttribute, m.Phone, table)
 
 	if err := attributevalue.UnmarshalMap(resp.Item, &m); err != nil {
 		log.Fatalf("unmarshal failed for get member, %v", err)
@@ -41,15 +41,15 @@ func (m Member) get(table string) Member {
 	return m
 }
 
-func (m Member) put(table string) {
+func (m Member) put(d dbPutter, table string) {
 	data, err := attributevalue.MarshalMap(m)
 	if err != nil {
 		log.Fatalf("unmarshal failed for put member, %v", err)
 	}
 
-	putItem(table, data)
+	d.putItem(table, data)
 }
 
-func (m Member) delete() {
-	delItem(memberAttribute, m.Phone, memberTable)
+func (m Member) delete(d dbDeleter) {
+	d.delItem(memberAttribute, m.Phone, memberTable)
 }

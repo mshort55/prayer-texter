@@ -18,8 +18,8 @@ const (
 	prayerTable     = "ActivePrayers"
 )
 
-func (p Prayer) get() Prayer {
-	resp := getItem(prayerAttribute, p.IntercessorPhone, prayerTable)
+func (p Prayer) get(d dbGetter) Prayer {
+	resp := d.getItem(prayerAttribute, p.IntercessorPhone, prayerTable)
 
 	if err := attributevalue.UnmarshalMap(resp.Item, &p); err != nil {
 		log.Fatalf("unmarshal failed for get prayer, %v", err)
@@ -28,15 +28,15 @@ func (p Prayer) get() Prayer {
 	return p
 }
 
-func (p Prayer) delete() {
-	delItem(prayerAttribute, p.IntercessorPhone, prayerTable)
-}
-
-func (p Prayer) put() {
+func (p Prayer) put(d dbPutter) {
 	data, err := attributevalue.MarshalMap(p)
 	if err != nil {
 		log.Fatalf("unmarshal failed for put prayer, %v", err)
 	}
 
-	putItem(prayerTable, data)
+	d.putItem(prayerTable, data)
+}
+
+func (p Prayer) delete(d dbDeleter) {
+	d.delItem(prayerAttribute, p.IntercessorPhone, prayerTable)
 }
